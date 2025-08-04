@@ -40,7 +40,7 @@ class AIClient:
         ]
 
 
-    def initialize_application(self, share= False):
+    def initialize_application(self, share=False):
         with gr.Blocks() as demo:
             with gr.Row():
                 # input elements
@@ -86,7 +86,7 @@ class AIClient:
 
             submit_btn.click(fn=self.on_submit_click, inputs=[recommendation_count,interests, relationship, budget, location, additional_info], outputs=output_chatbot_component, api_name="gift_recommendations")
 
-        demo.launch(share)
+        demo.launch(share=share)
 
     def on_submit_click(self, *args):
         self.recommendations = []
@@ -152,4 +152,4 @@ class AIClient:
 
 if __name__ == "__main__":
     ai_client = AIClient(config["OPENAI_API_KEY"])
-    ai_client.initialize_application(share=False)
+    ai_client.initialize_application(share=True)
