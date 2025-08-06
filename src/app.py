@@ -1,11 +1,12 @@
 # flake8: noqa
 import os
+import asyncio
 import json
 import logging
 import gradio as gr
-from openai import OpenAI
+from openai import AsyncOpenAI
 from dotenv import dotenv_values
-
+from helpers import get_countries
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,7 +21,7 @@ class AIClient:
     def __init__(self, OPENAI_API_KEY):
         self.recommendations = []
         self.initialize_prompt_details()
-        self.client = OpenAI(api_key=OPENAI_API_KEY)
+        self.client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
     def initialize_prompt_details(self):
         sample_json = {
@@ -32,13 +33,46 @@ class AIClient:
                 }
             ]
         }
+
         self.messages = [
             {
                 "role": "system",
-                "content": f"Provide output in valid JSON. You are world traveller knowledgeable about gifts and presents. Provide between 1 to 10 gifts recommendations and the data schema should be like this: ${json.dumps(sample_json)}. summary should also have one or two links to buy the gifts for the provided location."
+                "content": f"Provide output in valid JSON. You knowledgeable about gifts and presents. Provide between 1 to 10 gifts recommendations and the data schema should be like this: ${json.dumps(sample_json)}.The summary should also have one or two links to buy the gifts for the provided location."
             }
         ]
-
+        self.hobbies = [
+            "Select ...",
+            "Travel",
+            "Food",
+            "Books",
+            "Movies",
+            "Music",
+            "Games",
+            "Arts & Culture",
+            "Sports & Fitness",
+            "Learning & Intellectual Pursuits",
+            "Outdoor & Nature",
+            "Social & Community",
+            "Professional & Skill-Based",
+            "Other",
+        ]
+        self.budget_info = [
+            "Select ...",
+            "0-15",
+            "15-20",
+            "20-30",
+            "30-50",
+            "50-100",
+            "100-200",
+            "200-500",
+            "500-1000",
+            "1000-2000",
+            "2000-5000",
+            "5000 & Above"
+        ]
+        self.relationship = ["Select ...","Friend", "Family", "Partner", "Boss", "Colleague", "Other"]
+        self.location = ["Select ..."] +get_countries()
+        self.age_range = ["Select ...", "0-12", "13-19", "20-35", "35-59", "60+ years"]
 
     def initialize_application(self, share=False):
         with gr.Blocks() as demo:
@@ -46,37 +80,25 @@ class AIClient:
                 # input elements
                 with gr.Column():
                     with gr.Row():
-                        recommendation_count = gr.Slider(label="No. of recommendation", minimum=0, maximum=10, step=1, value=3)
-                        budget = gr.Slider(label="Budget", minimum=0, maximum=5000, step=10, value=100)
+                        count = gr.Slider(label="No. of recommendation", minimum=1, maximum=10, step=1, value=3)
+                        age_range =  gr.Dropdown(label="Demographic",
+                            choices = self.age_range,
+                        )
+                        budget = gr.Dropdown(label="Budget",
+                            choices = self.budget_info,
+                        )
                     with gr.Row():
-                        interests = gr.Dropdown(label="Interest",
-                        choices=[
-                            "Travel",
-                            "Food",
-                            "Books",
-                            "Movies",
-                            "Music",
-                            "Games",
-                            "Arts & Culture",
-                            "Sports & Fitness",
-                            "Learning & Intellectual Pursuits",
-                            "Outdoor & Nature",
-                            "Social & Community",
-                            "Professional & Skill-Based",
-                            "Other",
-                        ],
-                        value="Travel",
+                        hobbies = gr.Dropdown(label="Hobbies",
+                        choices = self.hobbies,
                     )
                         relationship = gr.Dropdown(label="Relationship",
-                            choices=["Friend", "Family", "Partner", "Boss", "Colleague", "Other"],
-                            value="Friend",
+                            choices= self.relationship,
                         )
                         location = gr.Dropdown(label="Location",
-                            choices=["England", "Canada", "Nigeria", "Ghana", "Other"],
-                            value="England",
+                            choices = self.location,
                         )
                     with gr.Row():
-                        additional_info = gr.Textbox(label="Additional Information",placeholder="Additional info about the person")
+                        additional_info = gr.TextArea(label="Additional Information",placeholder="Additional info about the person")
                     submit_btn = gr.Button("Generate")
                 # ouput elements
                 with gr.Column():
@@ -84,14 +106,23 @@ class AIClient:
                                                         min_height=800, autoscroll=True, editable=False, type="messages")
 
 
-            submit_btn.click(fn=self.on_submit_click, inputs=[recommendation_count,interests, relationship, budget, location, additional_info], outputs=output_chatbot_component, api_name="gift_recommendations")
+            submit_btn.click(fn=self.on_submit_click, inputs=[count, age_range, budget, hobbies, relationship, location, additional_info], outputs=output_chatbot_component, api_name="gift_recommendations")
 
         demo.launch(share=share)
 
-    def on_submit_click(self, *args):
+    def validate_input(self, key, value):
+        if not value or (isinstance(value, str) and "Select" in value):
+            raise gr.Error(f"{key} is required")
+
+    async def on_submit_click(self, *args):
         self.recommendations = []
-        count,interests, relationship, budget, location, additional_info = args
-        recommendations = self.get_gift_ideas(count,relationship, budget, location, interests, additional_info)
+        count, age_range, budget, hobbies, relationship, location, additional_info = args
+        function_keys = ["Demographic", "Budget", "Hobbies", "Relationship", "Location"]
+        for index, key in enumerate(args[1:len(function_keys)]):
+            self.validate_input(function_keys[index], key)
+
+        recommendations = await self.get_gift_ideas(count, age_range, budget, hobbies,
+                                                    relationship, location, additional_info)
 
         if recommendations:
             for index, recommendation in enumerate(recommendations, 1):
@@ -108,25 +139,30 @@ class AIClient:
 
 
 
-    def get_gift_ideas(self, *args):
-        count, relationship, budget, location, interests, additional_info = args
+    async def get_gift_ideas(self, *args):
+        count, age_range, budget, hobbies, relationship, location, additional_info = args
         try:
             prompt_object = [
                 {
                     "role": "user",
-                    "content": f"I am looking for {count} gift ideas. The person in question is {relationship}, has the following {interests} and resides in {location}. Any gift listed should be less than or equal to {budget}. Additional details: {additional_info}.",
+                    "content": f"Recommend the {count} best gift items for my {relationship}, who is {age_range} years old, enjoys {hobbies}, and lives in {location}. The budget range for the gifts should be within {budget}. Please include creative and thoughtful gift ideas tailored to them."
                 }
             ]
-            response = self.client.chat.completions.create(
+            if additional_info:
+                 prompt_object.append({
+                    "role": "user",
+                    "content": f"Feel free to consider other unique or personal details as well, such as {additional_info}, to make the suggestions especially meaningfu"
+
+                })
+            response = await self.client.chat.completions.create(
                 model="gpt-4o-mini", messages=self.messages + prompt_object
             )
-
             if response and response.choices[0].finish_reason == "stop":
                 initial_response = response.choices[0].message.content
                 output = json.loads(initial_response)
                 for _, item in enumerate(output["gift_recommendations"]):
                     prompt = f"An image of {item}"
-                    response = self.get_image(prompt)
+                    response = await self.get_image(prompt)
                     item["image"] = response
 
                 return output["gift_recommendations"]
@@ -134,9 +170,9 @@ class AIClient:
             logger.error(f"An error occurred, try again: {e}")
         return None
 
-    def get_image(self, prompt):
+    async def get_image(self, prompt):
         try:
-            response = self.client.images.generate(
+            response = await self.client.images.generate(
                 model="dall-e-3",  # or "dall-e-2"
                 prompt=prompt,
                 size="1024x1024",
@@ -147,9 +183,11 @@ class AIClient:
                 return response.data[0].url
         except Exception as e:
             logger.error('an error occure', e)
-        return None
+        return
 
+async def main():
+    ai_client = AIClient(config["OPENAI_API_KEY"])
+    ai_client.initialize_application(share=config["DEMO_AS_LINE_APP"])
 
 if __name__ == "__main__":
-    ai_client = AIClient(config["OPENAI_API_KEY"])
-    ai_client.initialize_application(share=True)
+    asyncio.run(main())

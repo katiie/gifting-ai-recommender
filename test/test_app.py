@@ -9,8 +9,8 @@ class AIClientTest(unittest.TestCase):
     def setUp(self):
         self.ai_client = AIClient("OPENAI_API_KEY")
 
-    def test_get_image_success(self):
-        with patch.object(self.ai_client.client.images, 'generate') as mock_generate:
+    async def test_get_image_success(self):
+        with patch.object(self.ai_client.client.images, 'generate', new_callable=MagicMock) as mock_generate:
             # Setup mock response
             mock_response = Mock()
             mock_data_item = Mock()
@@ -18,20 +18,21 @@ class AIClientTest(unittest.TestCase):
             mock_response.data = [mock_data_item]
             mock_generate.return_value = mock_response
 
-            result = self.ai_client.get_image("A beautiful landscape")
+            result = await self.ai_client.get_image("A beautiful landscape")
+            self.assertIsNotNone(result)
             self.assertEqual(result, "https://fake.image.url/generated.png")
 
-    def test_get_image_failure(self):
+    async def test_get_image_failure(self):
         with patch.object(self.ai_client.client.images, 'generate') as mock_generate:
             # Setup mock response
             mock_response = Mock()
             mock_response.data = []
             mock_generate.return_value = mock_response
 
-            result = self.ai_client.get_image("A beautiful landscape")
+            result = await self.ai_client.get_image("A beautiful landscape")
             self.assertIsNone(result)
 
-    def test_get_gift_ideas_success(self):
+    async def test_get_gift_ideas_success(self):
         # chat.completions.create
         with patch.object(self.ai_client.client.chat.completions, 'create') as mock_create:
             with patch.object(self.ai_client.client.images, 'generate') as mock_generate:
@@ -67,14 +68,14 @@ class AIClientTest(unittest.TestCase):
                 mock_generate.return_value = g_mock_response
 
 
-                result = self.ai_client.get_gift_ideas(2,"friend",100,"Canada","Art", "")
+                result = await self.ai_client.get_gift_ideas(2,"friend",100,"Canada","Art", "")
                 mock_create.assert_called_once()
                 mock_generate.assert_called
 
                 self.assertIsNotNone(result)
                 self.assertEqual(len(result), 2)
 
-    def test_get_gift_ideas_failure(self):
+    async def test_get_gift_ideas_failure(self):
         # chat.completions.create
         with patch.object(self.ai_client.client.chat.completions, 'create') as mock_create:
             with patch.object(self.ai_client.client.images, 'generate') as mock_generate:
@@ -99,7 +100,7 @@ class AIClientTest(unittest.TestCase):
                 mock_generate.return_value = g_mock_response
 
 
-                result = self.ai_client.get_gift_ideas(2,"friend",100,"Canada","Art", "")
+                result = await self.ai_client.get_gift_ideas(2,"friend",100,"Canada","Art", "")
                 mock_create.assert_called_once()
                 mock_generate.assert_called
 
