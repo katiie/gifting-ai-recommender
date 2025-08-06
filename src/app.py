@@ -186,8 +186,12 @@ class AIClient:
         return
 
 async def main():
-    ai_client = AIClient(config["OPENAI_API_KEY"])
-    ai_client.initialize_application(share=config["DEMO_AS_LINE_APP"])
+    OPENAI_API_KEY = config.get("OPENAI_API_KEY") or os.environ.get('OPENAI_API_KEY')
+    if not OPENAI_API_KEY:
+        raise Exception("OPENAI_API_KEY required")
+    DEMO_AS_LINE_APP = config.get("DEMO_AS_LINE_APP") or os.environ.get('DEMO_AS_LINE_APP') or True
+    ai_client = AIClient(OPENAI_API_KEY)
+    ai_client.initialize_application(DEMO_AS_LINE_APP)
 
 if __name__ == "__main__":
     asyncio.run(main())
